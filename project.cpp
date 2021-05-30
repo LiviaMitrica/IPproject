@@ -1,9 +1,12 @@
 #include "stdafx.h"
 #include "common.h"
+#include <filesystem>
 #include <iostream>
 #include <string.h>
 #include <fstream>
+
 using namespace std;
+
 
 #define GRAYSCALE 0
 #define BGR 1
@@ -25,6 +28,8 @@ ofstream myFile;
 ofstream myFileTxt;
 ifstream myFileIn;
 char fileNameBin[50] = { 0 };
+
+int sizeBefore, sizeAfter;
 
 int around(double a)
 {
@@ -279,8 +284,7 @@ void makeName(char src[], char name[]) {
 	if (point != 0 && dash != 0) {
 		int size = point - dash - 1;		
 		strcpy(name, src + dash + 1);
-		name[size] = '\0';
-		//cout << name << endl;		
+		name[size] = '\0';		
 	}		
 }
 
@@ -346,15 +350,15 @@ vector<vector<int>> readRLE() {
 		for (int i = 0; i < 3; i++) {
 			vector<int> rle;
 			myFileIn.read((char*)(&size), sizeof(int));
-			//cout << size << endl;
+			
 			for (int j = 0; j < size; j++) {
 				myFileIn.read(reinterpret_cast<char*>(&x), sizeof(int));
 				rle.push_back(x);
-				//cout << x << " " ;
+				
 			}
 
 			rle3channels.push_back(rle);
-			//cout << endl;
+			
 		}
 		return rle3channels;
 	}
@@ -368,10 +372,24 @@ vector<vector<int>> readRLE() {
 Mat_<Vec3s> putBlock(Mat_<Vec3s> src, Mat_<Vec3s> block, int row, int col) {
 
 	for (int i = row; i < row + 8; i++) {
-		for (int j = col; j < col + 8; j++) {
-			if(isInside( i, j, src) && isInside(row % 8, col % 8, block))
-			src(i, j) = block(row % 8, col % 8);
+		for (int j = col; j < col + 8; j++) {			
+			src(i, j) = (row == 0) ? (block(row, j % 8)) : (block(i % row, j % 8));
 		}
+	}
+
+	return src;
+}
+
+Mat_<Vec3b> undoPadding(Mat_<Vec3b> src, int originalH, int originalW) {
+	Mat_<Vec3b> dst(originalH, originalW);
+
+	if (src.rows != originalH || src.cols != originalW) {
+		for (int i = 0; i < originalH; i++) {
+			for (int j = 0; j < originalW; j++) {
+				dst(i, j) = src(i, j);
+			}
+		}
+		return dst;
 	}
 
 	return src;
@@ -382,8 +400,8 @@ void decompress() {
 	char aux1[50] = { 0 };
 	strcpy_s(aux1, fileNameBin);
 	
-	openFileRead(strcat(aux1, ".bin" ));//openFileRead(fileNameBin);
-	//cout << fileNameBin << endl;
+	openFileRead(strcat(aux1, ".bin" ));
+	
 	int originalW = 0, originalH = 0, W8 = 0, H8 = 0;
 
 	bool print = false;
@@ -395,7 +413,6 @@ void decompress() {
 		myFileIn.read(reinterpret_cast<char*>(&originalW), sizeof(int));
 		myFileIn.read(reinterpret_cast<char*>(&H8), sizeof(int));
 		myFileIn.read(reinterpret_cast<char*>(&W8), sizeof(int));
-		//cout << originalH << " " << originalW  <<  " " << H8 << " " << W8 << endl;
 		
 		Mat_<Vec3s> signedMatrix(H8, W8);
 		Mat_<Vec3b> compressedImg(originalH, originalW);
@@ -404,8 +421,6 @@ void decompress() {
 		int blocksRow = (H8 / 8);
 		int totalSquares = blocksCol * blocksRow;
 		int row = 0, col = 0;
-
-		//cout << blocksCol << " " << blocksRow << endl;
 
 		for (int i = 0; i < totalSquares; i++) {
 			vector<vector<int>> crtRLE = readRLE();
@@ -423,7 +438,6 @@ void decompress() {
 				multiply(blockCrt, luminance, blockMul);
 				channels[j] = computeIDCT(blockMul);
 				channels[j].convertTo(channels[j], CV_32S);
-	
 			}
 
 			merge(channels, block);
@@ -434,37 +448,24 @@ void decompress() {
 			
 			col = i % blocksCol * 8;
 			signedMatrix = putBlock(signedMatrix, block, row, col);
-
-			/*if (i <= 4){
-				//cout << endl << " block dec i = " << i << endl << channels[0] << endl << channels[1] << endl << channels[2] << endl;
-				//cout << endl << " block dec i = " << i << endl << block << endl;
-				
-				cout << endl << " signed matrix = " << i << endl;
-				for (int i = 0; i < 10; i++)
-					cout << signedMatrix(0,i) << " ";
-			}*/
-
 		}
 
 		//convert to unsigned
-		add(signedMatrix, Scalar(128, 128, 128), compressedImg); //cout << compressedImg;
+		add(signedMatrix, Scalar(128, 128, 128), compressedImg); 
 		imshow("compressed image YCrCb", compressedImg);
 
-		Mat_<Vec3b> finalImg;
+		Mat_<Vec3b> finalImg(originalH, originalW);
 		cv::cvtColor(compressedImg, finalImg, cv::COLOR_YCrCb2BGR);
+		finalImg = undoPadding(finalImg, originalH, originalW);
+		
 		imshow("compressed image BGR", finalImg);
-
-		cout << endl << " final img "  << endl;
-		for (int i = 0; i < 10; i++) {
-			for (int j = 0; j < 10; j++) {
-				cout << finalImg(i, j) << " ";			
-			}cout << endl;
-		}
 
 		char aux2[50] = { 0 };
 		strcpy_s(aux2, fileNameBin);
 
 		imwrite( strcat(aux2, ".jpg"), finalImg);
+
+		sizeAfter = finalImg.total() * finalImg.elemSize();
 	}
 	else
 	{
@@ -487,8 +488,7 @@ void compress(Mat_<Vec3b> src) {
 	Mat_<Vec3s> signed128;
 
 	luminance.convertTo(luminance, CV_32FC1);
-	cout << luminance << endl;
-
+	
 	//if image does not have w and h multiple of 8, pad the matrix with 0
 	if (src.cols % 8 != 0 || src.rows % 8 != 0) {
 		dst = padding(src);
@@ -501,13 +501,6 @@ void compress(Mat_<Vec3b> src) {
 	myFile.write(reinterpret_cast<char*> (&src.cols), sizeof(int));
 	myFile.write(reinterpret_cast<char*> (&dst.rows), sizeof(int));
 	myFile.write(reinterpret_cast<char*> (&dst.cols), sizeof(int));
-
-	cout << endl << " initial image = " << endl;
-	for (int i = 0; i < 10; i++){
-		for(int j=0; j < 10; j++){
-			cout << src(i, j) << " ";
-		}cout << endl;
-	}
 
 	//convert to YCrCb
 	cv::cvtColor(dst, ycrcb, cv::COLOR_BGR2YCrCb);imshow("YCrCb", ycrcb);
@@ -531,18 +524,11 @@ void compress(Mat_<Vec3b> src) {
 			vector<vector<int>> zizzag_channel;
 			vector<vector<int>> rle_zigzag;
 			
-			//if (i == 0 && j<=4*8 )
-				//cout << endl << " block init (i,j)" << i << "," << j << endl << channels[0] << endl << channels[1] << endl << channels[2] << endl;
-		
 			for (int k = 0; k < 3; k++) {
 				DCT.push_back(Mat(8, 8, CV_32FC1));
 				DCTMatrix.push_back(Mat(8, 8, CV_32FC1));
 				channels[k].convertTo(channels[k], CV_32FC1);			
-				DCTMatrix[k] = computeDCT(channels[k]);
-
-				//if (i == 0 && j <= 8)
-					//cout << endl << " block init (i,j)" << i << "," << j << endl << channels[k] << endl;
-				
+				DCTMatrix[k] = computeDCT(channels[k]);				
 				divide(DCTMatrix[k], luminance, channels[k]);
 				channels[k].convertTo(channels[k], CV_32S);
 				vector<int> crtZigZag = zizag(channels[k]);
@@ -566,6 +552,8 @@ void mouseClick()
 	while (openFileDlg(fname))
 	{
 		src = imread(fname);
+
+		sizeBefore = src.total() * src.elemSize();
 		
 		char fileName[50] = { 0 };
 		
@@ -578,6 +566,21 @@ void mouseClick()
 		compress(src);
 		
 		decompress();
+
+		ifstream originalImg(fname);
+		originalImg.seekg(0, ios::end);
+		sizeBefore = originalImg.tellg();
+
+		char aux2[50] = { 0 };
+		strcpy_s(aux2, fileNameBin);
+
+		ifstream finalImg(strcat(aux2, ".jpg"));
+		finalImg.seekg(0, ios::end);
+		sizeAfter = finalImg.tellg();
+
+		float ratio = sizeBefore * 1.0 / sizeAfter;
+		
+		printf("Compression ratio: %.2f\n", ratio);
 	}
 }
 

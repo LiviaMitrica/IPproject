@@ -194,31 +194,31 @@ vector<int> decompressRle(vector<int> src) {
 Mat computeDCT(Mat1f src) {
 	Mat1f dct(8, 8, CV_32FC1);
 
-	float ci, cj, dct1, sum;
+	float ck, cl, dct1, temp;
 
-	for (int i = 0; i < src.rows; i++) {
-		for (int j = 0; j < src.cols; j++) {
-			if (i == 0)
-				ci = 1 / sqrt(src.rows);
+	for (int k = 0; k < src.rows; k++) {
+		for (int l = 0; l < src.cols; l++) {
+			if (k == 0)
+				ck = 1.0 / sqrt(src.rows);
 			else
-				ci = sqrt(2) / sqrt(src.rows);
-			if (j == 0)
-				cj = 1 / sqrt(src.cols);
+				ck = sqrt(2.0) / sqrt(src.rows);
+			if (l == 0)
+				cl = 1.0 / sqrt(src.cols);
 			else
-				cj = sqrt(2) / sqrt(src.cols);
+				cl = sqrt(2.0) / sqrt(src.cols);
 
 			// sum will temporarily store the sum of
 			// cosine signals
-			sum = 0;
-			for (int x = 0; x < src.rows; x++) {
-				for (int y = 0; y < src.cols; y++) {
-					dct1 = src(x,y) *
-						cos((2 * x + 1) * i * PI / (2 * src.rows)) *
-						cos((2 * y + 1) * j * PI / (2 * src.cols));
-					sum = sum + dct1;
+			temp = 0;
+			for (int m = 0; m < src.rows; m++) {
+				for (int n = 0; n < src.cols; n++) {
+					dct1 = src(m,n) *
+						cos((2 * m + 1) * k * PI / (2 * src.rows)) *
+						cos((2 * n + 1) * l * PI / (2 * src.cols));
+					temp = temp + dct1;
 				}
 			}
-			dct(i,j) = ci * cj * sum;
+			dct(k,l) = ck * cl * temp;
 		}
 	}
 
@@ -240,22 +240,14 @@ Mat computeIDCT(Mat1f src) {
 				for (int l = 0;l < 8;l++)
 				{
 					if (k == 0)
-					{
 						ck = sqrt(1.0 / 8);
-					}
 					else
-					{
 						ck = sqrt(2.0 / 8);
-					}
 					if (l == 0)
-					{
-						cl = sqrt(1.0 / 8);
-					}
+					    cl = sqrt(1.0 / 8);
 					else
-					{
 						cl = sqrt(2.0 / 8);
-					}
-
+					
 					temp += ck * cl * src(k,l) * cos((2 * m + 1) * k * PI / (2 * 8)) * cos((2 * n + 1) * l * PI / (2 * 8));
 
 				}
